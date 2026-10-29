@@ -1,0 +1,21 @@
+# Build output
+Debug/
+Release/
+*.o
+*.d
+*.su
+*.elf
+*.map
+*.list
+*.hex
+*.bin
+
+# IDE / workspace
+.metadata/
+.settings/*.prefs.bak
+RemoteSystemsTempFiles/
+*.launch.bak
+
+# Local tooling
+graphify-out/
+.graphifyignore
