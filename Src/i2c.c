@@ -74,6 +74,96 @@ void MX_I2C1_Init(void)
 
 /* USER CODE BEGIN 1 */
 
+/* Waits for ISR flag, fails on NACK or timeout */
+static uint8_t i2c_wait_flag(uint32_t flag)
+{
+	uint32_t timeout = I2C_TIMEOUT;
+
+	while(!(LL_I2C_ReadReg(I2C1, ISR) & flag))
+	{
+		if(LL_I2C_IsActiveFlag_NACK(I2C1) || --timeout == 0)
+		{
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/* Ends transfer after error and releases the bus */
+static uint8_t i2c_error(void)
+{
+	if(LL_I2C_IsActiveFlag_BUSY(I2C1) && !LL_I2C_IsActiveFlag_STOP(I2C1))
+	{
+		LL_I2C_GenerateStopCondition(I2C1);
+	}
+
+	uint32_t timeout = I2C_TIMEOUT;
+	while(!LL_I2C_IsActiveFlag_STOP(I2C1) && --timeout);
+
+	LL_I2C_ClearFlag_NACK(I2C1);
+	LL_I2C_ClearFlag_STOP(I2C1);
+	return 1;
+}
+
+
+uint8_t i2c_master_write(uint8_t slave_address, uint8_t register_address, uint8_t *data, uint8_t length)
+{
+	// Register address + data in one transfer
+	LL_I2C_HandleTransfer(I2C1, slave_address, LL_I2C_ADDRSLAVE_7BIT, length + 1, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
+
+	if(i2c_wait_flag(I2C_ISR_TXIS)) return i2c_error();
+	LL_I2C_TransmitData8(I2C1, register_address);
+
+	for(uint8_t i = 0; i < length; i++)
+	{
+		if(i2c_wait_flag(I2C_ISR_TXIS)) return i2c_error();
+		LL_I2C_TransmitData8(I2C1, data[i]);
+	}
+
+	if(i2c_wait_flag(I2C_ISR_STOPF)) return i2c_error();
+	LL_I2C_ClearFlag_STOP(I2C1);
+
+	return 0;
+}
+
+
+uint8_t i2c_master_read(uint8_t slave_address, uint8_t register_address, uint8_t *data, uint8_t length)
+{
+	// Send register address, no stop - repeated start follows
+	LL_I2C_HandleTransfer(I2C1, slave_address, LL_I2C_ADDRSLAVE_7BIT, 1, LL_I2C_MODE_SOFTEND, LL_I2C_GENERATE_START_WRITE);
+
+	if(i2c_wait_flag(I2C_ISR_TXIS)) return i2c_error();
+	LL_I2C_TransmitData8(I2C1, register_address);
+
+	if(i2c_wait_flag(I2C_ISR_TC)) return i2c_error();
+
+	// Receive all bytes in one transfer
+	LL_I2C_HandleTransfer(I2C1, slave_address, LL_I2C_ADDRSLAVE_7BIT, length, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_READ);
+
+	for(uint8_t i = 0; i < length; i++)
+	{
+		if(i2c_wait_flag(I2C_ISR_RXNE)) return i2c_error();
+		data[i] = LL_I2C_ReceiveData8(I2C1);
+	}
+
+	if(i2c_wait_flag(I2C_ISR_STOPF)) return i2c_error();
+	LL_I2C_ClearFlag_STOP(I2C1);
+
+	return 0;
+}
+
+
+uint8_t i2c_master_write_byte(uint8_t slave_address, uint8_t register_address, uint8_t data)
+{
+	return i2c_master_write(slave_address, register_address, &data, 1);
+}
+
+
+uint8_t i2c_master_read_byte(uint8_t slave_address, uint8_t register_address, uint8_t *data)
+{
+	return i2c_master_read(slave_address, register_address, data, 1);
+}
+
 /* USER CODE END 1 */
 
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
